@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Світло за чергою · Бердичів</title>
+<title>Коли світло · Бердичів</title>
 <meta name="description" content="Графік відключень світла Житомиробленерго для Бердичева та району: черга за адресою, сьогодні й завтра, таймер, робота без інтернету.">
 <meta name="theme-color" content="#2d3350">
 <link rel="manifest" href="manifest.webmanifest">
@@ -130,7 +130,7 @@ footer{font-size:12px;color:var(--muted);text-align:center}
 <div class="wrap">
   <header class="top">
     <div>
-      <h1>Світло за чергою</h1>
+      <h1>Коли світло</h1>
       <p class="sub">Бердичів і район · Житомиробленерго. Графік оновлюється автоматично з сайту <a href="https://www.ztoe.com.ua/unhooking-search.php" target="_blank" rel="noopener">ztoe.com.ua</a>.</p>
     </div>
     <div class="theme" role="group" aria-label="Тема">
@@ -406,7 +406,7 @@ footer{font-size:12px;color:var(--muted);text-align:center}
     const url=location.origin+location.pathname+"#"+prof().queue;
     const text="Графік відключень світла, черга "+prof().queue+" (Бердичів)";
     const msg=$("shareMsg");
-    if(navigator.share){try{await navigator.share({title:"Світло за чергою",text,url});return;}catch(e){if(e&&e.name==="AbortError")return;}}
+    if(navigator.share){try{await navigator.share({title:"Коли світло",text,url});return;}catch(e){if(e&&e.name==="AbortError")return;}}
     try{await navigator.clipboard.writeText(url);msg.textContent="Посилання скопійовано: "+url;}
     catch(e){msg.textContent="Скопіюйте посилання: "+url;}
     msg.hidden=false;setTimeout(()=>{msg.hidden=true;},8000);

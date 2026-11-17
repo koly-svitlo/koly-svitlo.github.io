@@ -1,5 +1,5 @@
 // Offline support: keeps the page, icons and the last schedule on the phone.
-const CACHE = "svitlo-v2";
+const CACHE = "svitlo-v3";
 const SHELL = ["./", "index.html", "icon.svg", "manifest.webmanifest"];
 const DATA = /\/(data|addresses)\.json$/;
 
