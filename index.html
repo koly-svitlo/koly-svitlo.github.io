@@ -9,6 +9,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon.svg">
+<script>try{var t=localStorage.getItem("svitlo-theme");if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Unbounded:wght@500;700&family=JetBrains+Mono:wght@400;600&display=swap">
 <style>
@@ -18,9 +19,17 @@
   --f-display:"Unbounded",system-ui,sans-serif; --f-body:"Manrope",system-ui,sans-serif; --f-mono:"JetBrains Mono",ui-monospace,monospace;
   color-scheme:light;
 }
-@media (prefers-color-scheme:dark){:root{
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
   --bg:#10121a; --surface:#181b26; --fg:#e9ebf2; --muted:#9097ab; --line:#2a2e3d;
   --on:#f5bd3a; --on-soft:#3a2f12; --off:#5b6390; --off-soft:#232741; --accent:#7b8cff; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#10121a; --surface:#181b26; --fg:#e9ebf2; --muted:#9097ab; --line:#2a2e3d;
+  --on:#f5bd3a; --on-soft:#3a2f12; --off:#5b6390; --off-soft:#232741; --accent:#7b8cff; color-scheme:dark}
+.top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+.top>div{min-width:0;flex:1 1 260px}
+.theme{display:inline-flex;border:1px solid var(--line);border-radius:10px;padding:2px;background:var(--surface);flex:none}
+.theme button{font:600 12px var(--f-body);padding:6px 10px;border:0;border-radius:8px;background:transparent;color:var(--muted);cursor:pointer}
+.theme button[aria-pressed="true"]{background:var(--fg);color:var(--bg)}
 *{box-sizing:border-box}
 html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:15px;line-height:1.5;
@@ -73,9 +82,16 @@ footer{font-size:12px;color:var(--muted);text-align:center}
 </head>
 <body>
 <div class="wrap">
-  <header>
+  <header class="top">
+    <div>
     <h1>Світло за чергою</h1>
     <p class="sub">Бердичів · Житомиробленерго. Сторінка показує, коли вимкнуть і ввімкнуть світло у вашій черзі. Графік оновлюється автоматично з сайту <a href="https://www.ztoe.com.ua/unhooking-search.php" target="_blank" rel="noopener">ztoe.com.ua</a>.</p>
+    </div>
+    <div class="theme" role="group" aria-label="Тема">
+      <button type="button" data-t="auto">Авто</button>
+      <button type="button" data-t="light">Світла</button>
+      <button type="button" data-t="dark">Темна</button>
+    </div>
   </header>
 
   <section class="card" aria-live="polite">
@@ -284,6 +300,21 @@ footer{font-size:12px;color:var(--muted);text-align:center}
     const warn=get(q,1).ex?" Графіка на завтра поки немає: коли обленерго його опублікує, збережіть файл ще раз.":"";
     $("icsMsg").textContent="Файл підготовлено: відключень "+count+", нагадування за "+mins+" хв. Відкрийте його й додайте в календар."+warn;
   };
+
+  // theme switch: auto (follow the phone) / light / dark
+  const themeBtns=[...document.querySelectorAll(".theme button")];
+  function applyTheme(t){
+    if(t==="light"||t==="dark") document.documentElement.setAttribute("data-theme",t);
+    else document.documentElement.removeAttribute("data-theme");
+    themeBtns.forEach(b=>b.setAttribute("aria-pressed",b.dataset.t===(t||"auto")));
+    const dark=t==="dark"||(t!=="light"&&matchMedia("(prefers-color-scheme: dark)").matches);
+    document.querySelector('meta[name="theme-color"]').content=dark?"#10121a":"#2d3350";
+  }
+  let theme="auto";
+  try{theme=localStorage.getItem("svitlo-theme")||"auto";}catch(e){}
+  themeBtns.forEach(b=>b.onclick=()=>{theme=b.dataset.t;try{localStorage.setItem("svitlo-theme",theme);}catch(e){}applyTheme(theme);});
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change",()=>applyTheme(theme));
+  applyTheme(theme);
 
   render(); load();
   setInterval(load,10*60*1000);
