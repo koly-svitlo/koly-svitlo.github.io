@@ -317,14 +317,14 @@ footer{font-size:12px;color:var(--muted);text-align:center}
 
   // ---------- static UI ----------
   QUEUES.forEach(q=>{const b=document.createElement("button");b.type="button";b.textContent=q;b.id="q-"+q;
-    b.onclick=()=>{prof().queue=q;save();render();};$("queues").appendChild(b);});
+    b.onclick=()=>{prof().queue=q;prof().none=false;save();render();};$("queues").appendChild(b);});
   for(let h=0;h<24;h++){const s=document.createElement("span");s.textContent=pad(h);$("ticks").appendChild(s);}
   $("tToday").onclick=()=>{day=0;render();};
   $("tTomorrow").onclick=()=>{day=1;render();};
 
   function renderChips(){
     const box=$("chips");
-    box.innerHTML=st.profiles.map((p,i)=>'<button type="button" class="chip" data-i="'+i+'" aria-pressed="'+(i===st.cur)+'">'+esc(p.name||"Адреса")+' <span class="mono">'+esc(p.queue)+'</span></button>').join("")
+    box.innerHTML=st.profiles.map((p,i)=>'<button type="button" class="chip" data-i="'+i+'" aria-pressed="'+(i===st.cur)+'">'+esc(p.name||"Адреса")+' <span class="mono">'+(p.none?"—":esc(p.queue))+'</span></button>').join("")
       +'<button type="button" class="chip add" id="pAdd" aria-label="Додати адресу">+ Адреса</button>';
   }
   $("chips").addEventListener("click",e=>{
@@ -345,7 +345,7 @@ footer{font-size:12px;color:var(--muted);text-align:center}
 
   function renderWhere(){
     const p=prof(), addr=[p.street,p.house].filter(Boolean).join(", ");
-    $("where").innerHTML='<b>'+esc(p.name)+'</b>'+(addr?' · '+esc(addr):'')+' · черга <b class="mono">'+esc(p.queue)+'</b> · зараз <span id="clock" class="mono"></span>';
+    $("where").innerHTML='<b>'+esc(p.name)+'</b>'+(addr?' · '+esc(addr):'')+(p.none?' · <b>не за графіком</b>':' · черга <b class="mono">'+esc(p.queue)+'</b>')+' · зараз <span id="clock" class="mono"></span>';
   }
 
   function render(){
@@ -389,7 +389,9 @@ footer{font-size:12px;color:var(--muted);text-align:center}
     const nowMin=now.getHours()*60+now.getMinutes(), si=Math.floor(nowMin/30);
     const off=all[si];
     let j=si+1;while(j<96&&all[j]===off)j++;
-    const bulb=$("bulb");bulb.className="bulb "+(off?"off":"on");bulb.textContent=off?"НЕМАЄ":"Є";
+    const bulb=$("bulb");
+    if(prof().none){bulb.className="bulb on";bulb.textContent="Є";$("state").textContent="Світло за графіком не вимикають";$("next").textContent="За цією адресою можливі лише аварійні відключення";$("count").textContent="";return;}
+    bulb.className="bulb "+(off?"off":"on");bulb.textContent=off?"НЕМАЄ":"Є";
     $("state").textContent=t0.ex?"Графіка немає":(off?"Світла немає":"Світло є");
     if(t0.ex){$("next").textContent="Графік на сьогодні ще не опубліковано";$("count").textContent="";return;}
     if(j>=96||(!off&&j>=48&&t1.ex)){$("next").textContent=off?"Час увімкнення в графіку не вказано":(t1.ex?"Сьогодні більше відключень немає. Графіка на завтра поки немає":"За графіком відключень немає");$("count").textContent="";return;}
@@ -512,7 +514,7 @@ footer{font-size:12px;color:var(--muted);text-align:center}
     curStreet=s; $("aStreet").value=s.name; $("aSug").hidden=true; $("aStreet").setAttribute("aria-expanded","false");
     saveAddr(); showResult(); if(!$("aHouse").value) $("aHouse").focus();
   }
-  function chooseQueue(q){prof().queue=q;save();render();}
+  function chooseQueue(q){prof().queue=q;prof().none=false;save();render();}
   function showResult(){
     const box=$("aRes");
     if(!curStreet){
@@ -530,9 +532,10 @@ footer{font-size:12px;color:var(--muted);text-align:center}
     const qs=[...new Set(rows.map(r=>r.q||"none"))];
     if((h&&hits.length&&qs.length===1)||(!h&&qs.length===1)){
       const only=rows[0];
-      if(only.q){ if(prof().queue!==only.q) chooseQueue(only.q);
+      if(only.q){ if(prof().queue!==only.q||prof().none) chooseQueue(only.q);
         box.innerHTML='<p class="found">Ваша черга: <span class="mono">'+only.q+'</span> ✓</p>'+(h?'':'<p class="hint">На цій вулиці всі будинки в одній черзі.</p>');
-      } else box.innerHTML='<p class="found">За цією адресою світло за графіком не вимикають, крім аварійних відключень.</p>';
+      } else { if(!prof().none){prof().none=true;save();render();}
+        box.innerHTML='<p class="found">За цією адресою світло за графіком не вимикають, крім аварійних відключень.</p>'; }
       return;
     }
     box.innerHTML=head+(h?'':'<p class="hint">На цій вулиці різні черги. Введіть номер будинку або оберіть рядок.</p>')+rows.map(r=>'<div class="arow'+(r.hit?' hit':'')+'"><div style="min-width:0"><div class="qv">'+(r.q?'Черга '+r.q:'Не за графіком')+'</div><div class="h">'+(r.q?'':esc(r.info)+'. ')+'Буд.: '+esc(r.houses)+(isHome(r)?'':' · '+esc(r.note))+'</div></div>'+(r.q?'<button type="button" class="btn small'+(r.q===prof().queue?'':' primary')+'" data-q="'+r.q+'">'+(r.q===prof().queue?'Обрано':'Обрати')+'</button>':'')+'</div>').join("");
