@@ -68,18 +68,50 @@ try { data = JSON.parse(await readFile(DATA, "utf8")); } catch {}
 data.days ??= {};
 
 let changed = false;
+const changedDates = [];
 for (const [date, q] of valid) {
   const prev = data.days[date];
   const same = prev && QUEUES.every(x => prev.q?.[x] === q[x]);
-  if (!same) { data.days[date] = { updated, q }; changed = true; }
+  if (!same) { data.days[date] = { updated, q }; changed = true; changedDates.push(date); }
 }
 const yesterday = kyivDate(-1);
 for (const d of Object.keys(data.days)) if (d < yesterday) { delete data.days[d]; changed = true; }
 
-if (changed) {
+// Record the check time when something changed, or at least every 3 hours,
+// so the site can show "перевірено N хв тому" without a commit every 30 minutes.
+const stale = !data.checked || Date.now() - new Date(data.checked).getTime() > 3 * 3600e3;
+if (changed || stale) {
   data.checked = new Date().toISOString();
   await writeFile(DATA, JSON.stringify(data, null, 2) + "\n");
-  console.log("Updated:", valid.map(([d]) => d).join(", "), "| 4.1:", valid.map(([d, q]) => d + " " + q["4.1"]).join(" ; "));
+  console.log(changed ? "Updated: " + changedDates.join(", ") : "Check time refreshed.");
 } else {
   console.log("No changes.");
+}
+
+// ---- Telegram channel (optional): set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID secrets ----
+const TG_TOKEN = process.env.TELEGRAM_BOT_TOKEN, TG_CHAT = process.env.TELEGRAM_CHAT_ID;
+const SITE = process.env.SITE_URL || "https://srgborin-alt.github.io/svitlo-berdychiv/";
+const slot = s => String(Math.floor(s / 2)).padStart(2, "0") + ":" + (s % 2 ? "30" : "00");
+function ranges(str) {
+  const out = []; let s = null;
+  for (let i = 0; i <= 48; i++) {
+    const v = i < 48 && str[i] === "X";
+    if (v && s === null) s = i;
+    if (!v && s !== null) { out.push(slot(s) + "–" + (i === 48 ? "24:00" : slot(i))); s = null; }
+  }
+  return out.length ? out.join(", ") : "без відключень";
+}
+if (TG_TOKEN && TG_CHAT && changedDates.length) {
+  const today = kyivDate(0);
+  for (const date of changedDates.filter(d => d >= today).sort()) {
+    const d = data.days[date], [y, m, dd] = date.split("-");
+    const title = (date === today ? "Сьогодні" : "Завтра") + `, ${dd}.${m}`;
+    const lines = QUEUES.map(q => `${q}: ${ranges(d.q[q])}`);
+    const text = `💡 Графік відключень світла · Бердичів\n${title} (обленерго, ${d.updated})\n\n${lines.join("\n")}\n\nСвоя черга за адресою: ${SITE}`;
+    const r = await fetch(`https://api.telegram.org/bot${TG_TOKEN}/sendMessage`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: TG_CHAT, text, disable_web_page_preview: true }),
+    });
+    console.log("Telegram", date, r.ok ? "sent" : "failed " + r.status);
+  }
 }

@@ -22,6 +22,9 @@ jobs:
           node-version: 24
       - name: Read ztoe.com.ua
         run: node scripts/update.mjs
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       - name: Commit data.json
         run: |
           if git diff --quiet -- data.json; then
