@@ -101,9 +101,12 @@ function ranges(str) {
   }
   return out.length ? out.join(", ") : "без відключень";
 }
-if (TG_TOKEN && TG_CHAT && changedDates.length) {
+const tgTest = process.env.TELEGRAM_TEST === "true";
+if ((TG_TOKEN && TG_CHAT) || tgTest) console.log("Telegram:", TG_TOKEN ? "token set" : "NO TOKEN", "|", TG_CHAT ? "chat set" : "NO CHAT ID");
+const toSend = tgTest ? Object.keys(data.days) : changedDates;
+if (TG_TOKEN && TG_CHAT && toSend.length) {
   const today = kyivDate(0);
-  for (const date of changedDates.filter(d => d >= today).sort()) {
+  for (const date of toSend.filter(d => d >= today).sort()) {
     const d = data.days[date], [y, m, dd] = date.split("-");
     const title = (date === today ? "Сьогодні" : "Завтра") + `, ${dd}.${m}`;
     const lines = QUEUES.map(q => `${q}: ${ranges(d.q[q])}`);
@@ -112,6 +115,6 @@ if (TG_TOKEN && TG_CHAT && changedDates.length) {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ chat_id: TG_CHAT, text, disable_web_page_preview: true }),
     });
-    console.log("Telegram", date, r.ok ? "sent" : "failed " + r.status);
+    console.log("Telegram", date, r.ok ? "sent" : "failed " + r.status + " " + (await r.text()).slice(0, 200));
   }
 }
