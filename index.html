@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Світло за чергою · Бердичів</title>
+<meta name="description" content="Графік відключень світла Житомиробленерго для Бердичева: черги 1.1–6.2, сьогодні й завтра, таймер і нагадування в календарі.">
+<meta name="theme-color" content="#2d3350">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Unbounded:wght@500;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+:root{
+  --bg:#f3f4f7; --surface:#ffffff; --fg:#1b1e27; --muted:#626a7d; --line:#dfe2ea;
+  --on:#f2b01e; --on-soft:#fdf1d3; --off:#2d3350; --off-soft:#e4e6f0; --accent:#3d5afe;
+  --f-display:"Unbounded",system-ui,sans-serif; --f-body:"Manrope",system-ui,sans-serif; --f-mono:"JetBrains Mono",ui-monospace,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#10121a; --surface:#181b26; --fg:#e9ebf2; --muted:#9097ab; --line:#2a2e3d;
+  --on:#f5bd3a; --on-soft:#3a2f12; --off:#5b6390; --off-soft:#232741; --accent:#7b8cff; color-scheme:dark}}
+*{box-sizing:border-box}
+html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:15px;line-height:1.5;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:24px 48px}
+[hidden]{display:none!important}
+a{color:var(--accent)}
+.wrap{max-width:640px;margin:0 auto;display:flex;flex-direction:column;gap:20px}
+h1{font-family:var(--f-display);font-size:22px;font-weight:700;margin:0;text-wrap:balance}
+h2{font-family:var(--f-display);font-size:14px;font-weight:500;margin:0;letter-spacing:.02em}
+.sub{color:var(--muted);margin:4px 0 0;font-size:14px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:14px;min-width:0}
+.label{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600;margin:0}
+.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.status{display:grid;grid-template-columns:auto 1fr;gap:16px;align-items:center}
+.bulb{width:64px;height:64px;border-radius:50%;display:grid;place-items:center;font-family:var(--f-display);font-size:12px;font-weight:700}
+.bulb.on{background:var(--on);color:#2a1d00;box-shadow:0 0 0 8px var(--on-soft)}
+.bulb.off{background:var(--off);color:#fff;box-shadow:0 0 0 8px var(--off-soft)}
+.state{font-family:var(--f-display);font-size:20px;font-weight:700;margin:0}
+.next{margin:2px 0 0;color:var(--muted)}
+.count{font-size:28px;font-weight:600;margin:0}
+.pill{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px;background:var(--on-soft);color:var(--fg);letter-spacing:.04em}
+.queues{display:grid;grid-template-columns:repeat(6,1fr);gap:6px}
+.queues button{font:600 14px var(--f-mono);padding:10px 0;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--fg);cursor:pointer}
+.queues button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#fff}
+@media (max-width:420px){.queues{grid-template-columns:repeat(4,1fr)}}
+.tabs{display:flex;gap:6px}
+.tabs button{flex:1;font:600 14px var(--f-body);padding:8px;border-radius:10px;border:1px solid var(--line);background:transparent;color:var(--fg);cursor:pointer}
+.tabs button[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.tl{display:grid;grid-template-columns:repeat(24,1fr);gap:2px}
+.hr{display:grid;grid-template-rows:1fr 1fr;gap:2px}
+.slot{height:22px;border:0;padding:0;border-radius:3px;background:var(--on-soft);cursor:pointer}
+.slot.off{background:var(--off)}
+.slot.now{outline:2px solid var(--accent);outline-offset:1px}
+.ticks{display:grid;grid-template-columns:repeat(24,1fr);font:400 10px var(--f-mono);color:var(--muted)}
+.ticks span:nth-child(odd){visibility:hidden}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:13px;color:var(--muted)}
+.legend i{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:-2px;margin-right:6px}
+.list{display:flex;flex-direction:column;gap:6px;margin:0;padding:0;list-style:none}
+.list li{display:flex;justify-content:space-between;gap:12px;padding:8px 12px;border-radius:10px;background:var(--off-soft)}
+.empty{color:var(--muted);font-size:14px}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+input[type=text]{flex:1;min-width:0;font:400 14px var(--f-mono);padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--fg)}
+.btn{font:600 14px var(--f-body);padding:10px 14px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--fg);cursor:pointer}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.hint{font-size:13px;color:var(--muted);margin:0}
+.msg{font-size:13px;margin:0;min-height:1.2em}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+footer{font-size:12px;color:var(--muted);text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Світло за чергою</h1>
+    <p class="sub">Бердичів · Житомиробленерго. Сторінка показує, коли вимкнуть і ввімкнуть світло у вашій черзі. Графік оновлюється автоматично з сайту <a href="https://www.ztoe.com.ua/unhooking-search.php" target="_blank" rel="noopener">ztoe.com.ua</a>.</p>
+  </header>
+
+  <section class="card" aria-live="polite">
+    <div class="status">
+      <div id="bulb" class="bulb on">Є</div>
+      <div>
+        <p class="label">Черга <span id="qName" class="mono">4.1</span> · зараз <span id="clock" class="mono"></span> <span id="exPill" class="pill" hidden>НЕМАЄ ГРАФІКА</span></p>
+        <p id="state" class="state">Світло є</p>
+        <p id="next" class="next"></p>
+      </div>
+    </div>
+    <p id="count" class="count mono"></p>
+  </section>
+
+  <section class="card">
+    <h2>Моя черга</h2>
+    <div id="queues" class="queues" role="group" aria-label="Черга"></div>
+    <p class="hint">Свою чергу можна знайти за адресою на <a href="https://www.ztoe.com.ua/unhooking-search.php" target="_blank" rel="noopener">сайті обленерго</a>.</p>
+  </section>
+
+  <section class="card">
+    <div class="tabs" role="group" aria-label="День">
+      <button id="tToday" type="button" aria-pressed="true">Сьогодні</button>
+      <button id="tTomorrow" type="button" aria-pressed="false">Завтра</button>
+    </div>
+    <div>
+      <div id="tl" class="tl"></div>
+      <div id="ticks" class="ticks" aria-hidden="true"></div>
+    </div>
+    <div class="legend"><span><i style="background:var(--on-soft)"></i>світло є</span><span><i style="background:var(--off)"></i>відключення</span><span>кожна клітинка 30 хв, натисніть, щоб змінити</span></div>
+    <p id="src" class="hint"></p>
+    <div>
+      <p class="label">Відключення</p>
+      <ul id="list" class="list"></ul>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Сповіщення на телефон</h2>
+    <p class="hint">Збережіть файл і відкрийте його на телефоні: відключення з'являться в календарі, і телефон нагадає про них заздалегідь, навіть коли сайт закритий. Коли графік зміниться, збережіть файл знову.</p>
+    <div class="row">
+      <label for="remind" class="hint" style="align-self:center">Нагадати за</label>
+      <select id="remind" class="btn">
+        <option value="10">10 хв</option>
+        <option value="15">15 хв</option>
+        <option value="30" selected>30 хв</option>
+        <option value="60">1 год</option>
+      </select>
+      <button id="ics" class="btn primary" type="button">Зберегти в календар</button>
+    </div>
+    <p id="icsMsg" class="msg"></p>
+  </section>
+
+  <section class="card">
+    <h2>Внести графік вручну</h2>
+    <p class="hint">Якщо графік змінився, а сайт ще не оновився, вставте інтервали відключень для обраної черги та дня, наприклад <span class="mono">08:00-11:30, 18:00-21:00</span>. Зміни бачите тільки ви.</p>
+    <div class="row">
+      <input id="ranges" type="text" placeholder="08:00-11:30, 18:00-21:00" autocomplete="off">
+      <button id="apply" class="btn primary" type="button">Зберегти</button>
+    </div>
+    <div class="row">
+      <button id="clear" class="btn" type="button">Очистити день</button>
+      <button id="reset" class="btn" type="button">Повернути графік обленерго</button>
+    </div>
+    <p id="msg" class="msg"></p>
+  </section>
+
+  <footer>Неофіційний сайт. Дані беруться з сайту Житомиробленерго; крім графіків можуть діяти аварійні відключення.</footer>
+</div>
+
+<script>
+(function(){
+  const QUEUES=["1.1","1.2","2.1","2.2","3.1","3.2","4.1","4.2","5.1","5.2","6.1","6.2"];
+  const KEY="svitlo-v1";
+  const $=id=>document.getElementById(id);
+  const pad=n=>String(n).padStart(2,"0");
+  const dkey=d=>d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
+  const slotTime=s=>pad(Math.floor(s/2))+":"+(s%2?"30":"00");
+
+  let st={queue:"4.1",custom:{}};
+  try{const raw=localStorage.getItem(KEY);if(raw)st=Object.assign(st,JSON.parse(raw));}catch(e){}
+  const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(st));}catch(e){}};
+  let day=0, OFFICIAL={}, loadErr=false;
+
+  async function load(){
+    try{
+      const r=await fetch("data.json?t="+Date.now(),{cache:"no-store"});
+      if(!r.ok) throw 0;
+      OFFICIAL=(await r.json()).days||{}; loadErr=false;
+    }catch(e){loadErr=true;}
+    render();
+  }
+
+  function dateFor(off){const d=new Date();d.setHours(0,0,0,0);d.setDate(d.getDate()+off);return d;}
+  function get(q,off){
+    const d=dateFor(off),k=dkey(d)+"|"+q;
+    if(st.custom[k]) return {slots:st.custom[k],ex:false,src:"Змінено вами"};
+    const o=OFFICIAL[dkey(d)];
+    if(o&&o.q&&o.q[q]) return {slots:[...o.q[q]].map(c=>c==="X"),ex:false,src:"Житомиробленерго, оновлено "+(o.updated||"")};
+    return {slots:new Array(48).fill(false),ex:true,src:loadErr?"Не вдалося завантажити графік. Перевірте інтернет і оновіть сторінку.":"Графіка від обленерго на цей день поки немає"};
+  }
+  function set(q,off,slots){st.custom[dkey(dateFor(off))+"|"+q]=slots;save();}
+
+  QUEUES.forEach(q=>{const b=document.createElement("button");b.type="button";b.textContent=q;b.id="q-"+q;
+    b.onclick=()=>{st.queue=q;save();render();};$("queues").appendChild(b);});
+  for(let h=0;h<24;h++){const s=document.createElement("span");s.textContent=pad(h);$("ticks").appendChild(s);}
+  $("tToday").onclick=()=>{day=0;render();};
+  $("tTomorrow").onclick=()=>{day=1;render();};
+
+  function intervals(slots){
+    const out=[];let s=null;
+    for(let i=0;i<=48;i++){const v=i<48&&slots[i];
+      if(v&&s===null)s=i; if(!v&&s!==null){out.push([s,i]);s=null;}}
+    return out;
+  }
+  const fmtEnd=e=>e===48?"24:00":slotTime(e);
+  function dur(min){const h=Math.floor(min/60),m=min%60;return ((h?h+" год ":"")+(m||!h?m+" хв":"")).trim();}
+
+  function render(){
+    const q=st.queue;
+    QUEUES.forEach(x=>$("q-"+x).setAttribute("aria-pressed",x===q));
+    $("tToday").setAttribute("aria-pressed",day===0);$("tTomorrow").setAttribute("aria-pressed",day===1);
+    $("qName").textContent=q;
+    const cur=get(q,day), now=new Date(), nowSlot=now.getHours()*2+(now.getMinutes()>=30?1:0);
+    const tl=$("tl");tl.innerHTML="";
+    for(let h=0;h<24;h++){const col=document.createElement("div");col.className="hr";
+      for(let k=0;k<2;k++){const s=h*2+k,b=document.createElement("button");b.type="button";
+        b.className="slot"+(cur.slots[s]?" off":"")+(day===0&&s===nowSlot?" now":"");
+        b.title=slotTime(s)+"–"+fmtEnd(s+1)+(cur.slots[s]?" · відключення":" · світло є");
+        b.setAttribute("aria-label",b.title);
+        b.onclick=()=>{const a=cur.slots.slice();a[s]=!a[s];set(q,day,a);render();};
+        col.appendChild(b);}
+      tl.appendChild(col);}
+    const iv=intervals(cur.slots), list=$("list");list.innerHTML="";
+    if(!iv.length){list.innerHTML='<li class="empty" style="background:none;padding:0">Відключень немає</li>';}
+    iv.forEach(([a,b])=>{const li=document.createElement("li");
+      li.innerHTML='<span class="mono">'+slotTime(a)+' – '+fmtEnd(b)+'</span><span>'+dur((b-a)*30)+'</span>';list.appendChild(li);});
+    $("ranges").placeholder=iv.length?iv.map(([a,b])=>slotTime(a)+"-"+fmtEnd(b)).join(", "):"08:00-11:30, 18:00-21:00";
+    $("exPill").hidden=!(get(q,0).ex);
+    $("src").textContent=cur.src;
+    status();
+  }
+
+  function status(){
+    const q=st.queue, now=new Date();
+    $("clock").textContent=pad(now.getHours())+":"+pad(now.getMinutes());
+    const all=get(q,0).slots.concat(get(q,1).slots);
+    const nowMin=now.getHours()*60+now.getMinutes(), si=Math.floor(nowMin/30);
+    const off=all[si];
+    let j=si+1;while(j<96&&all[j]===off)j++;
+    const bulb=$("bulb");bulb.className="bulb "+(off?"off":"on");bulb.textContent=off?"НЕМАЄ":"Є";
+    $("state").textContent=off?"Світла немає":"Світло є";
+    if(j>=96||(!off&&j>=48&&get(q,1).ex)){$("next").textContent=off?"Час увімкнення в графіку не вказано":(get(q,1).ex?"Сьогодні більше відключень немає. Графіка на завтра поки немає":"За графіком відключень немає");$("count").textContent="";return;}
+    const left=j*30*60-(nowMin*60+now.getSeconds());
+    $("next").textContent=(off?"Увімкнуть ":"Вимкнуть ")+(j>=48?"завтра о ":"о ")+slotTime(j%48);
+    const h=Math.floor(left/3600),m=Math.floor(left%3600/60),s=left%60;
+    $("count").textContent=(off?"до світла ":"до відключення ")+pad(h)+":"+pad(m)+":"+pad(s);
+  }
+
+  function parse(txt){
+    const a=new Array(48).fill(false), re=/(\d{1,2})[:.](\d{2})\s*[-–—]\s*(\d{1,2})[:.](\d{2})/g;let m,n=0;
+    while((m=re.exec(txt))){
+      const s=(+m[1])*2+(+m[2]>=30?1:0); let e=(+m[3])*2+(+m[4]>=30?1:0); if(e===0)e=48;
+      if(s>=48||e>48||e<=s) return null;
+      for(let i=s;i<e;i++)a[i]=true;n++;
+    }
+    return n?a:null;
+  }
+  $("apply").onclick=()=>{
+    const a=parse($("ranges").value.trim());
+    if(!a){$("msg").textContent="Не вдалося прочитати час. Пишіть так: 08:00-11:30, 18:00-21:00";return;}
+    set(st.queue,day,a);$("ranges").value="";
+    $("msg").textContent="Збережено для черги "+st.queue+", "+(day?"завтра":"сьогодні")+".";render();
+  };
+  $("ranges").addEventListener("keydown",e=>{if(e.key==="Enter")$("apply").click();});
+  $("clear").onclick=()=>{set(st.queue,day,new Array(48).fill(false));$("msg").textContent="День очищено: відключень немає.";render();};
+  $("reset").onclick=()=>{delete st.custom[dkey(dateFor(day))+"|"+st.queue];save();$("msg").textContent="Показано графік Житомиробленерго.";render();};
+
+  function icsTime(d){return d.getFullYear()+pad(d.getMonth()+1)+pad(d.getDate())+"T"+pad(d.getHours())+pad(d.getMinutes())+"00";}
+  function buildIcs(q,mins){
+    const lines=["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//svitlo-za-chergoyu//UK","CALSCALE:GREGORIAN","METHOD:PUBLISH"];
+    const stamp=icsTime(new Date());let n=0;
+    [0,1].forEach(off=>{
+      const base=dateFor(off);
+      intervals(get(q,off).slots).forEach(([a,b])=>{
+        const s=new Date(base.getTime()+a*30*60000), e=new Date(base.getTime()+b*30*60000);
+        if(e<new Date()) return;
+        n++;
+        lines.push("BEGIN:VEVENT","UID:svitlo-"+q+"-"+icsTime(s)+"@svitlo","DTSTAMP:"+stamp,
+          "DTSTART:"+icsTime(s),"DTEND:"+icsTime(e),
+          "SUMMARY:Немає світла · черга "+q,
+          "DESCRIPTION:Відключення за графіком: "+slotTime(a)+"–"+fmtEnd(b)+". Світло увімкнуть о "+fmtEnd(b)+".",
+          "BEGIN:VALARM","ACTION:DISPLAY","DESCRIPTION:За "+mins+" хв вимкнуть світло","TRIGGER:-PT"+mins+"M","END:VALARM",
+          "END:VEVENT");
+      });
+    });
+    lines.push("END:VCALENDAR");
+    return {text:lines.join("\r\n"),count:n};
+  }
+  $("ics").onclick=()=>{
+    const q=st.queue, mins=+$("remind").value, {text,count}=buildIcs(q,mins);
+    if(!count){$("icsMsg").textContent="Попереду немає відключень за графіком: зберігати нічого.";return;}
+    const url=URL.createObjectURL(new Blob([text],{type:"text/calendar;charset=utf-8"}));
+    const a=document.createElement("a");a.href=url;a.download="svitlo-cherga-"+q+".ics";
+    document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),5000);
+    const warn=get(q,1).ex?" Графіка на завтра поки немає: коли обленерго його опублікує, збережіть файл ще раз.":"";
+    $("icsMsg").textContent="Файл підготовлено: відключень "+count+", нагадування за "+mins+" хв. Відкрийте його й додайте в календар."+warn;
+  };
+
+  render(); load();
+  setInterval(load,10*60*1000);
+  document.addEventListener("visibilitychange",()=>{if(!document.hidden)load();});
+  let lastSlot=-1;
+  setInterval(()=>{const n=new Date(),s=n.getHours()*2+(n.getMinutes()>=30?1:0);if(s!==lastSlot){lastSlot=s;render();}else status();},1000);
+})();
+</script>
+</body>
+</html>
