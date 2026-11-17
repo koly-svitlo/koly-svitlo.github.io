@@ -78,6 +78,20 @@ input[type=text]{flex:1;min-width:0;font:400 14px var(--f-mono);padding:10px 12p
 .msg{font-size:13px;margin:0;min-height:1.2em}
 button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 footer{font-size:12px;color:var(--muted);text-align:center}
+/* address search */
+.addr-grid{display:grid;grid-template-columns:1fr 2fr 1fr;gap:10px}
+@media (max-width:520px){.addr-grid{grid-template-columns:1fr 1fr}.addr-grid .street{grid-column:1/-1;grid-row:2}}
+.field{display:flex;flex-direction:column;gap:4px;min-width:0;position:relative}
+.field select,.field input{width:100%;text-align:left}
+.sug{position:absolute;top:100%;left:0;right:0;z-index:5;margin:4px 0 0;padding:4px;list-style:none;background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.18);max-height:260px;overflow:auto}
+.sug li{padding:8px 10px;border-radius:8px;cursor:pointer}
+.sug li[aria-selected="true"],.sug li:hover{background:var(--off-soft)}
+.ares{display:flex;flex-direction:column;gap:8px}
+.arow{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 12px;border-radius:10px;border:1px solid var(--line)}
+.arow.hit{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+.arow .h{min-width:0;font-size:13px;color:var(--muted);overflow-wrap:anywhere}
+.arow .qv{font:600 15px var(--f-mono);white-space:nowrap}
+.arow .btn{padding:6px 12px;font-size:13px;flex:none}
 </style>
 </head>
 <body>
@@ -109,7 +123,24 @@ footer{font-size:12px;color:var(--muted);text-align:center}
   <section class="card">
     <h2>Моя черга</h2>
     <div id="queues" class="queues" role="group" aria-label="Черга"></div>
-    <p class="hint">Свою чергу можна знайти за адресою на <a href="https://www.ztoe.com.ua/unhooking-search.php" target="_blank" rel="noopener">сайті обленерго</a>.</p>
+  </section>
+
+  <section class="card" id="addr">
+    <h2>Знайти чергу за адресою</h2>
+    <div class="addr-grid">
+      <label class="field"><span class="label">Населений пункт</span>
+        <select id="aPlace" class="btn"><option value="0">місто Бердичів</option></select>
+      </label>
+      <label class="field street"><span class="label">Вулиця</span>
+        <input id="aStreet" type="text" placeholder="Наприклад, Житомирська" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="aSug">
+        <ul id="aSug" class="sug" role="listbox" hidden></ul>
+      </label>
+      <label class="field house"><span class="label">Будинок</span>
+        <input id="aHouse" type="text" placeholder="12А" autocomplete="off" inputmode="text">
+      </label>
+    </div>
+    <div id="aRes" class="ares" aria-live="polite"></div>
+    <p class="hint">Адреси взято з пошуку на <a href="https://www.ztoe.com.ua/unhooking-search.php" target="_blank" rel="noopener">сайті обленерго</a>, Бердичівський РЕМ<span id="aUpd"></span>.</p>
   </section>
 
   <section class="card">
@@ -300,6 +331,77 @@ footer{font-size:12px;color:var(--muted);text-align:center}
     const warn=get(q,1).ex?" Графіка на завтра поки немає: коли обленерго його опублікує, збережіть файл ще раз.":"";
     $("icsMsg").textContent="Файл підготовлено: відключень "+count+", нагадування за "+mins+" хв. Відкрийте його й додайте в календар."+warn;
   };
+
+  // ---- address search (addresses.json is built by scripts/addresses.mjs) ----
+  let ADDR=null, addrLoading=null, curStreet=null, sugIdx=-1;
+  const AKEY="svitlo-addr";
+  let saved={};
+  try{saved=JSON.parse(localStorage.getItem(AKEY)||"{}");}catch(e){}
+  const saveAddr=()=>{try{localStorage.setItem(AKEY,JSON.stringify({place:$("aPlace").value,street:curStreet&&curStreet.name,house:$("aHouse").value}));}catch(e){}};
+  const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  const norm=s=>(" "+s.toLowerCase().replace(/[’'`ʼ]/g,"").replace(/[.,]/g," ")+" ").replace(/\s(вул|вулиця|пров|провулок|просп|проспект|пл|площа|туп|тупик|узвіз)(?=\s)/g," ").replace(/\s+/g," ").trim();
+  const normHouse=s=>s.toLowerCase().replace(/\s|\.|-/g,"").replace(/a/g,"а").replace(/b/g,"б").replace(/v/g,"в");
+
+  function loadAddr(){
+    if(addrLoading) return addrLoading;
+    $("aRes").innerHTML='<p class="hint">Завантажую адреси…</p>';
+    addrLoading=fetch("addresses.json",{cache:"no-cache"}).then(r=>{if(!r.ok)throw 0;return r.json();}).then(j=>{
+      ADDR=j;
+      $("aPlace").innerHTML=j.places.map((p,i)=>'<option value="'+i+'">'+esc(p.name)+'</option>').join("");
+      if(saved.place&&j.places[+saved.place]) $("aPlace").value=saved.place;
+      if(j.updated) $("aUpd").textContent=", оновлено "+j.updated.split("-").reverse().join(".");
+      if(saved.street){const s=place().streets.find(x=>x.name===saved.street);if(s){curStreet=s;$("aStreet").value=s.name;$("aHouse").value=saved.house||"";}}
+      showResult();
+    }).catch(()=>{addrLoading=null;$("aRes").innerHTML='<p class="hint">Не вдалося завантажити адреси. Перевірте інтернет і спробуйте ще раз.</p>';});
+    return addrLoading;
+  }
+  const place=()=>ADDR.places[+$("aPlace").value]||ADDR.places[0];
+
+  function suggest(){
+    const q=norm($("aStreet").value), ul=$("aSug");
+    if(!ADDR||!q){ul.hidden=true;$("aStreet").setAttribute("aria-expanded","false");return;}
+    const words=q.split(" ");
+    const list=place().streets.filter(s=>{const n=norm(s.name);return words.every(w=>n.includes(w));})
+      .sort((a,b)=>norm(a.name).indexOf(words[0])-norm(b.name).indexOf(words[0])).slice(0,12);
+    sugIdx=-1;
+    ul.innerHTML=list.length?list.map((s,i)=>'<li role="option" data-i="'+i+'">'+esc(s.name)+'</li>').join(""):'<li aria-disabled="true" class="hint">Нічого не знайдено</li>';
+    ul._list=list; ul.hidden=false; $("aStreet").setAttribute("aria-expanded","true");
+  }
+  function pickStreet(s){
+    curStreet=s; $("aStreet").value=s.name; $("aSug").hidden=true; $("aStreet").setAttribute("aria-expanded","false");
+    saveAddr(); showResult(); if(!$("aHouse").value) $("aHouse").focus();
+  }
+  function showResult(){
+    const box=$("aRes");
+    if(!curStreet){box.innerHTML='<p class="hint">Почніть вводити назву вулиці й оберіть її зі списку.</p>';return;}
+    const h=normHouse($("aHouse").value);
+    const isHome=r=>!/непобут|юридич/i.test(r.note||"");
+    let rows=curStreet.rows.map(r=>({...r,hit:!!h&&r.houses.split(",").some(x=>normHouse(x)===h)}));
+    const pickHome=list=>list.some(isHome)?list.filter(isHome):list; // households first, businesses only if nothing else
+    const hits=rows.filter(r=>r.hit);
+    let head="";
+    if(h&&hits.length) rows=pickHome(hits);
+    else { rows=pickHome(rows); if(h) head='<p class="hint">Будинку '+esc($("aHouse").value)+' немає в списку обленерго. Нижче всі будинки цієї вулиці.</p>'; }
+    box.innerHTML=head+rows.map(r=>'<div class="arow'+(r.hit?' hit':'')+'"><div style="min-width:0"><div class="qv">'+(r.q?'Черга '+r.q:'Не за графіком')+'</div><div class="h">'+(r.q?'':esc(r.info)+'. ')+'Буд.: '+esc(r.houses)+(isHome(r)?'':' · '+esc(r.note))+'</div></div>'+(r.q?'<button type="button" class="btn'+(r.q===st.queue?'':' primary')+'" data-q="'+r.q+'">'+(r.q===st.queue?'Обрано':'Обрати')+'</button>':'')+'</div>').join("");
+  }
+  $("aRes").addEventListener("click",e=>{const b=e.target.closest("button[data-q]");if(!b)return;
+    st.queue=b.dataset.q;save();render();showResult();window.scrollTo({top:0,behavior:matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth"});});
+  $("aStreet").addEventListener("focus",()=>loadAddr());
+  $("aPlace").addEventListener("focus",()=>loadAddr());
+  $("aStreet").addEventListener("input",()=>{curStreet=null;loadAddr().then(suggest);showResult();});
+  $("aStreet").addEventListener("keydown",e=>{
+    const ul=$("aSug"),items=[...ul.querySelectorAll("li[data-i]")];
+    if(ul.hidden||!items.length) return;
+    if(e.key==="ArrowDown"||e.key==="ArrowUp"){e.preventDefault();sugIdx=(sugIdx+(e.key==="ArrowDown"?1:-1)+items.length)%items.length;
+      items.forEach((li,i)=>li.setAttribute("aria-selected",i===sugIdx));items[sugIdx].scrollIntoView({block:"nearest"});}
+    else if(e.key==="Enter"){e.preventDefault();pickStreet(ul._list[Math.max(sugIdx,0)]);}
+    else if(e.key==="Escape"){ul.hidden=true;}
+  });
+  $("aSug").addEventListener("mousedown",e=>{const li=e.target.closest("li[data-i]");if(li){e.preventDefault();pickStreet($("aSug")._list[+li.dataset.i]);}});
+  $("aStreet").addEventListener("blur",()=>setTimeout(()=>{$("aSug").hidden=true;},150));
+  $("aPlace").addEventListener("change",()=>{curStreet=null;$("aStreet").value="";$("aHouse").value="";saveAddr();showResult();$("aStreet").focus();});
+  $("aHouse").addEventListener("input",()=>{saveAddr();showResult();});
+  if(saved.street) loadAddr(); else showResult();
 
   // theme switch: auto (follow the phone) / light / dark
   const themeBtns=[...document.querySelectorAll(".theme button")];
