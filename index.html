@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="uk">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+    <title>Коли світло · Бердичів</title>
+    <meta
+      name="description"
+      content="Графік відключень світла Житомиробленерго для Бердичева та району: черга за адресою, сьогодні й завтра, таймер, робота без інтернету."
+    />
+    <meta name="theme-color" content="#2d3350" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" href="icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="icon.svg" />
+    <script>
+      try {
+        var t = localStorage.getItem('svitlo-theme');
+        if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+      } catch (e) {}
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Unbounded:wght@500;700&family=JetBrains+Mono:wght@400;600&display=swap"
+    />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="top">
+        <div>
+          <h1>Коли світло</h1>
+          <p class="sub">
+            Бердичів і район · Житомиробленерго. Графік оновлюється автоматично з сайту
+            <a href="https://www.ztoe.com.ua/unhooking-search.php" target="_blank" rel="noopener"
+              >ztoe.com.ua</a
+            >.
+          </p>
+        </div>
+        <div class="theme" role="group" aria-label="Тема">
+          <button type="button" data-t="auto">Авто</button>
+          <button type="button" data-t="light">Світла</button>
+          <button type="button" data-t="dark">Темна</button>
+        </div>
+      </header>
+
+      <section class="card" aria-live="polite">
+        <div id="chips" class="chips" role="group" aria-label="Мої адреси"></div>
+        <p id="offline" class="notice" hidden></p>
+        <div class="status">
+          <div id="bulb" class="bulb on">Є</div>
+          <div>
+            <p id="where" class="where"></p>
+            <p id="state" class="state">Світло є</p>
+            <p id="next" class="next"></p>
+          </div>
+        </div>
+        <p id="count" class="count mono"></p>
+        <div class="status-foot">
+          <p id="checked" class="hint"></p>
+          <button id="share" class="btn small" type="button">Поділитися</button>
+        </div>
+        <p id="shareMsg" class="msg" hidden></p>
+      </section>
+
+      <section class="card" id="addr">
+        <div class="card-head">
+          <h2>Моя адреса</h2>
+          <button id="pDel" class="btn link" type="button" hidden>Видалити адресу</button>
+        </div>
+        <label class="field"
+          ><span class="label">Назва</span>
+          <input id="pName" type="text" maxlength="24" placeholder="Дім" autocomplete="off" />
+        </label>
+        <div class="addr-grid">
+          <label class="field"
+            ><span class="label">Населений пункт</span>
+            <select id="aPlace" class="btn">
+              <option value="місто Бердичів">місто Бердичів</option>
+            </select>
+          </label>
+          <label class="field street"
+            ><span class="label">Вулиця</span>
+            <input
+              id="aStreet"
+              type="text"
+              placeholder="Наприклад, Житомирська"
+              autocomplete="off"
+              role="combobox"
+              aria-expanded="false"
+              aria-controls="aSug"
+              aria-autocomplete="list"
+            />
+            <ul id="aSug" class="sug" role="listbox" hidden></ul>
+          </label>
+          <label class="field house"
+            ><span class="label">Будинок</span>
+            <input id="aHouse" type="text" placeholder="12А" autocomplete="off" />
+          </label>
+        </div>
+        <div id="aRes" class="ares" aria-live="polite"></div>
+        <p class="hint">
+          Адреси взято з пошуку на
+          <a href="https://www.ztoe.com.ua/unhooking-search.php" target="_blank" rel="noopener"
+            >сайті обленерго</a
+          >, Бердичівський РЕМ<span id="aUpd"></span>.
+        </p>
+      </section>
+
+      <section class="card">
+        <div class="tabs" role="group" aria-label="День">
+          <button id="tToday" type="button" aria-pressed="true">Сьогодні</button>
+          <button id="tTomorrow" type="button" aria-pressed="false">Завтра</button>
+        </div>
+        <div>
+          <div id="tl" class="tl"></div>
+          <div id="ticks" class="ticks" aria-hidden="true"></div>
+        </div>
+        <div class="legend">
+          <span><i style="background: var(--on-soft)"></i>світло є</span
+          ><span><i style="background: var(--off)"></i>відключення</span
+          ><span>кожна клітинка 30 хв</span>
+        </div>
+        <p id="summary" class="summary"></p>
+        <ul id="list" class="list"></ul>
+        <p id="src" class="hint"></p>
+      </section>
+
+      <section class="card">
+        <h2>Нагадування в календарі</h2>
+        <p class="hint">
+          Збережіть файл і відкрийте його на телефоні: відключення з'являться в календарі, і телефон
+          нагадає про них заздалегідь, навіть коли сайт закритий. Коли графік зміниться, збережіть
+          файл знову.
+        </p>
+        <div class="row">
+          <label for="remind" class="hint">Нагадати за</label>
+          <select id="remind" class="btn">
+            <option value="10">10 хв</option>
+            <option value="15">15 хв</option>
+            <option value="30" selected>30 хв</option>
+            <option value="60">1 год</option>
+          </select>
+          <button id="ics" class="btn primary" type="button">Зберегти в календар</button>
+        </div>
+        <p id="icsMsg" class="msg"></p>
+      </section>
+
+      <details class="card">
+        <summary>Обрати чергу вручну</summary>
+        <div id="queues" class="queues" role="group" aria-label="Черга"></div>
+      </details>
+
+      <details class="card">
+        <summary>Внести графік вручну</summary>
+        <div style="display: flex; flex-direction: column; gap: 12px">
+          <p class="hint">
+            Якщо графік змінився, а сайт ще не оновився, вставте інтервали відключень для своєї
+            черги та обраного дня, наприклад <span class="mono">08:00-11:30, 18:00-21:00</span>.
+            Також можна натискати на клітинки графіка. Зміни бачите тільки ви.
+          </p>
+          <div class="row">
+            <input
+              id="ranges"
+              type="text"
+              placeholder="08:00-11:30, 18:00-21:00"
+              autocomplete="off"
+            />
+            <button id="apply" class="btn primary" type="button">Зберегти</button>
+          </div>
+          <div class="row">
+            <button id="clear" class="btn" type="button">Очистити день</button>
+            <button id="reset" class="btn" type="button">Повернути графік обленерго</button>
+          </div>
+          <p id="msg" class="msg"></p>
+        </div>
+      </details>
+
+      <footer>
+        Неофіційний сайт. Дані беруться з сайту Житомиробленерго; крім графіків можуть діяти
+        аварійні відключення.<br />Працює і без інтернету: показує останній збережений графік.
+      </footer>
+    </div>
+
+    <script type="module" src="app.js"></script>
+
+    <!-- offline support registration (also in app.js, keeping for redundancy) -->
+    <script>
+      if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+    </script>
+  </body>
+</html>

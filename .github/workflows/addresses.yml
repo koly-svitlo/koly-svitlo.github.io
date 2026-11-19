@@ -1,0 +1,41 @@
+name: Оновити адреси
+
+on:
+  schedule:
+    - cron: '20 2 * * 1' # щопонеділка о 02:20 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-addresses
+  cancel-in-progress: false
+
+jobs:
+  addresses:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - name: Read addresses from ztoe.com.ua
+        run: node scripts/addresses.mjs
+        env:
+          FETCH_TIMEOUT: '30000'
+      - name: Commit addresses.json
+        run: |
+          if git diff --quiet -- addresses.json; then
+            echo "No changes"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add addresses.json
+            git commit -m "Оновлення адрес"
+            git pull --rebase
+            git push
+          fi

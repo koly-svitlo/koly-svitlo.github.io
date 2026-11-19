@@ -1,0 +1,1012 @@
+/**
+ * @file app.js — Main application logic for "Коли світло"
+ * @module app
+ */
+
+// ============================================================================
+// Types (JSDoc for IDE support)
+// ============================================================================
+
+/** @typedef {"1.1"|"1.2"|"2.1"|"2.2"|"3.1"|"3.2"|"4.1"|"4.2"|"5.1"|"5.2"|"6.1"|"6.2"} Queue */
+
+/** @typedef {Object} Profile
+ * @property {string} name
+ * @property {Queue} queue
+ * @property {string} place
+ * @property {string} street
+ * @property {string} house
+ * @property {boolean} [none]
+ */
+
+/** @typedef {Object} AppState
+ * @property {Profile[]} profiles
+ * @property {number} cur
+ * @property {Record<string, boolean[]>} custom
+ */
+
+/** @typedef {Object} ScheduleDay
+ * @property {string} updated
+ * @property {Record<Queue, string>} q
+ */
+
+/** @typedef {Object} ScheduleData
+ * @property {Record<string, ScheduleDay>} days
+ * @property {string} [checked]
+ */
+
+/** @typedef {Object} AddressRow
+ * @property {string} houses
+ * @property {Queue|null} q
+ * @property {string} [note]
+ * @property {string} [info]
+ */
+
+/** @typedef {Object} AddressStreet
+ * @property {string} name
+ * @property {AddressRow[]} rows
+ */
+
+/** @typedef {Object} AddressPlace
+ * @property {string} name
+ * @property {AddressStreet[]} streets
+ */
+
+/** @typedef {Object} AddressData
+ * @property {string} updated
+ * @property {AddressPlace[]} places
+ */
+
+// ============================================================================
+// Constants
+// ============================================================================
+
+/** @type {Queue[]} */
+const QUEUES = ['1.1', '1.2', '2.1', '2.2', '3.1', '3.2', '4.1', '4.2', '5.1', '5.2', '6.1', '6.2'];
+
+const KEY = 'svitlo-v2';
+const DKEY = 'svitlo-data';
+
+// ============================================================================
+// DOM Helpers
+// ============================================================================
+
+/** @type {(id: string) => HTMLElement|null} */
+const $ = id => document.getElementById(id);
+const pad = n => String(n).padStart(2, '0');
+const dkey = d => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+const slotTime = s => pad(Math.floor(s / 2)) + ':' + (s % 2 ? '30' : '00');
+const esc = s =>
+  String(s == null ? '' : s).replace(
+    /[&<>"]/g,
+    c =>
+      ({
+        '&': '&',
+        '<': '<',
+        '>': '>',
+        '"': '&quot;',
+      })[c]
+  );
+const lsGet = k => {
+  try {
+    return localStorage.getItem(k);
+  } catch (_e) {
+    return null;
+  }
+};
+const lsSet = (k, v) => {
+  try {
+    localStorage.setItem(k, v);
+  } catch (_e) {
+    /* empty */
+  }
+};
+
+// ============================================================================
+// State: several saved addresses (profiles)
+// ============================================================================
+
+/** @type {AppState|null} */
+let st = null;
+
+try {
+  st = JSON.parse(lsGet(KEY) || 'null');
+} catch (_e) {
+  /* empty */
+}
+
+if (!st || !Array.isArray(st.profiles) || !st.profiles.length) {
+  let old = {},
+    oldAddr = {};
+  try {
+    old = JSON.parse(lsGet('svitlo-v1') || '{}');
+    oldAddr = JSON.parse(lsGet('svitlo-addr') || '{}');
+  } catch (_e) {
+    /* empty */
+  }
+  st = {
+    profiles: [
+      {
+        name: 'Дім',
+        queue: QUEUES.includes(old.queue) ? old.queue : '4.1',
+        place: '',
+        street: oldAddr.street || '',
+        house: oldAddr.house || '',
+      },
+    ],
+    cur: 0,
+    custom: old.custom || {},
+  };
+}
+st.custom = st.custom || {};
+if (!(st.cur >= 0 && st.cur < st.profiles.length)) st.cur = 0;
+
+const save = () => lsSet(KEY, JSON.stringify(st));
+const prof = () => st.profiles[st.cur];
+
+// Link with a queue: #4.1 opens that queue
+(function fromHash() {
+  const m = decodeURIComponent(location.hash || '').match(/^#?(\d\.\d)$/);
+  if (!m || !QUEUES.includes(m[1])) return;
+  let i = st.profiles.findIndex(p => p.queue === m[1]);
+  if (i < 0) {
+    st.profiles.push({ name: 'Черга ' + m[1], queue: m[1], place: '', street: '', house: '' });
+    i = st.profiles.length - 1;
+  }
+  st.cur = i;
+  save();
+  try {
+    history.replaceState(null, '', location.pathname + location.search);
+  } catch (_e) {
+    /* empty */
+  }
+})();
+
+// ============================================================================
+// Schedule data
+// ============================================================================
+
+let day = 0;
+/** @type {ScheduleData|null} */
+let DATA = null;
+let online = navigator.onLine;
+let loadFailed = false;
+
+try {
+  DATA = JSON.parse(lsGet(DKEY) || 'null');
+} catch (_e) {
+  /* empty */
+}
+
+/** @returns {Promise<void>} */
+async function load() {
+  try {
+    const r = await fetch('data.json?t=' + Date.now(), { cache: 'no-store' });
+    if (!r.ok) throw 0;
+    DATA = await r.json();
+    loadFailed = false;
+    lsSet(DKEY, JSON.stringify(DATA));
+  } catch (_e) {
+    loadFailed = true;
+  }
+  render();
+}
+
+const OFFICIAL = () => (DATA && DATA.days) || {};
+
+/** @param {number} off */
+function dateFor(off) {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() + off);
+  return d;
+}
+
+/**
+ * @param {Queue} q
+ * @param {number} off
+ * @returns {{slots: boolean[], ex: boolean, src: string}}
+ */
+function get(q, off) {
+  const d = dateFor(off);
+  const k = dkey(d) + '|' + q;
+  if (st.custom[k]) return { slots: st.custom[k], ex: false, src: 'Змінено вами вручну' };
+  const o = OFFICIAL()[dkey(d)];
+  if (o && o.q && o.q[q]) {
+    return {
+      slots: [...o.q[q]].map(c => c === 'X'),
+      ex: false,
+      src: 'Житомиробленерго, оновлено ' + (o.updated || ''),
+    };
+  }
+  return {
+    slots: new Array(48).fill(false),
+    ex: true,
+    src:
+      !DATA && loadFailed
+        ? 'Не вдалося завантажити графік. Перевірте інтернет і оновіть сторінку.'
+        : 'Графіка від обленерго на цей день поки немає',
+  };
+}
+
+/** @param {Queue} q @param {number} off @param {boolean[]} slots */
+function setCustom(q, off, slots) {
+  st.custom[dkey(dateFor(off)) + '|' + q] = slots;
+  save();
+}
+
+/** @param {boolean[]} slots @returns {Array<[number, number]>} */
+function intervals(slots) {
+  const out = [];
+  let s = null;
+  for (let i = 0; i <= 48; i++) {
+    const v = i < 48 && slots[i];
+    if (v && s === null) s = i;
+    if (!v && s !== null) {
+      out.push([s, i]);
+      s = null;
+    }
+  }
+  return out;
+}
+const fmtEnd = e => (e === 48 ? '24:00' : slotTime(e));
+const dur = min => {
+  const h = Math.floor(min / 60),
+    m = min % 60;
+  return ((h ? h + ' год ' : '') + (m || !h ? m + ' хв' : '')).trim();
+};
+const plural = (n, a, b, c) => {
+  const m10 = n % 10,
+    m100 = n % 100;
+  return m10 === 1 && m100 !== 11 ? a : m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14) ? b : c;
+};
+/** @param {string} iso */
+function ago(iso) {
+  const min = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (!(min >= 0)) return '';
+  if (min < 1) return 'щойно';
+  if (min < 60) return min + ' хв тому';
+  const h = Math.floor(min / 60);
+  if (h < 24) return h + ' год тому';
+  return Math.floor(h / 24) + ' ' + plural(Math.floor(h / 24), 'день', 'дні', 'днів') + ' тому';
+}
+
+// ============================================================================
+// Static UI init
+// ============================================================================
+
+QUEUES.forEach(q => {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.textContent = q;
+  b.id = 'q-' + q;
+  b.onclick = () => {
+    prof().queue = q;
+    prof().none = false;
+    save();
+    render();
+  };
+  $('queues').appendChild(b);
+});
+for (let h = 0; h < 24; h++) {
+  const s = document.createElement('span');
+  s.textContent = pad(h);
+  $('ticks').appendChild(s);
+}
+$('tToday').onclick = () => {
+  day = 0;
+  render();
+};
+$('tTomorrow').onclick = () => {
+  day = 1;
+  render();
+};
+
+// ============================================================================
+// Render functions
+// ============================================================================
+
+function renderChips() {
+  const box = $('chips');
+  box.innerHTML =
+    st.profiles
+      .map(
+        (p, i) =>
+          '<button type="button" class="chip" data-i="' +
+          i +
+          '" aria-pressed="' +
+          (i === st.cur) +
+          '">' +
+          esc(p.name || 'Адреса') +
+          ' <span class="mono">' +
+          (p.none ? '—' : esc(p.queue)) +
+          '</span></button>'
+      )
+      .join('') +
+    '<button type="button" class="chip add" id="pAdd" aria-label="Додати адресу">+ Адреса</button>';
+}
+
+$('chips').addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  if (b.id === 'pAdd') {
+    st.profiles.push({
+      name: 'Адреса ' + (st.profiles.length + 1),
+      queue: prof().queue,
+      place: '',
+      street: '',
+      house: '',
+    });
+    st.cur = st.profiles.length - 1;
+    save();
+    fillAddr();
+    render();
+    $('addr').scrollIntoView({
+      behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+      block: 'start',
+    });
+    setTimeout(() => $('pName').select(), 300);
+    return;
+  }
+  st.cur = +b.dataset.i;
+  save();
+  fillAddr();
+  render();
+});
+
+$('pName').addEventListener('input', () => {
+  prof().name = $('pName').value.trim() || 'Адреса';
+  save();
+  renderChips();
+  renderWhere();
+});
+
+$('pDel').onclick = () => {
+  if (st.profiles.length < 2) return;
+  st.profiles.splice(st.cur, 1);
+  st.cur = Math.max(0, st.cur - 1);
+  save();
+  fillAddr();
+  render();
+};
+
+function renderWhere() {
+  const p = prof(),
+    addr = [p.street, p.house].filter(Boolean).join(', ');
+  $('where').innerHTML =
+    '<b>' +
+    esc(p.name) +
+    '</b>' +
+    (addr ? ' · ' + esc(addr) : '') +
+    (p.none ? ' · <b>не за графіком</b>' : ' · черга <b class="mono">' + esc(p.queue) + '</b>') +
+    ' · зараз <span id="clock" class="mono"></span>';
+}
+
+function render() {
+  const q = prof().queue;
+  renderChips();
+  renderWhere();
+  $('pDel').hidden = st.profiles.length < 2;
+  QUEUES.forEach(x => $('q-' + x).setAttribute('aria-pressed', x === q));
+  $('tToday').setAttribute('aria-pressed', day === 0);
+  $('tTomorrow').setAttribute('aria-pressed', day === 1);
+  const cur = get(q, day),
+    now = new Date(),
+    nowSlot = now.getHours() * 2 + (now.getMinutes() >= 30 ? 1 : 0);
+  const tl = $('tl');
+  tl.innerHTML = '';
+  for (let h = 0; h < 24; h++) {
+    const col = document.createElement('div');
+    col.className = 'hr';
+    for (let k = 0; k < 2; k++) {
+      const s = h * 2 + k,
+        b = document.createElement('button');
+      b.type = 'button';
+      b.className =
+        'slot' + (cur.slots[s] ? ' off' : '') + (day === 0 && s === nowSlot ? ' now' : '');
+      b.title =
+        slotTime(s) + '–' + fmtEnd(s + 1) + (cur.slots[s] ? ' · відключення' : ' · світло є');
+      b.setAttribute('aria-label', b.title);
+      b.onclick = () => {
+        const a = cur.slots.slice();
+        a[s] = !a[s];
+        setCustom(q, day, a);
+        render();
+      };
+      col.appendChild(b);
+    }
+    tl.appendChild(col);
+  }
+  const iv = intervals(cur.slots),
+    list = $('list');
+  list.innerHTML = '';
+  const total = iv.reduce((n, [a, b]) => n + (b - a) * 30, 0);
+  $('summary').textContent = cur.ex
+    ? ''
+    : iv.length
+      ? (day ? 'Завтра' : 'Сьогодні') +
+        ' без світла: ' +
+        dur(total) +
+        ', ' +
+        iv.length +
+        ' ' +
+        plural(iv.length, 'відключення', 'відключення', 'відключень')
+      : (day ? 'Завтра' : 'Сьогодні') + ' відключень за графіком немає';
+  if (!iv.length && cur.ex) {
+    list.innerHTML = '<li class="empty" style="background:none;padding:0">Графіка ще немає</li>';
+  }
+  iv.forEach(([a, b]) => {
+    const li = document.createElement('li');
+    li.innerHTML =
+      '<span class="mono">' +
+      slotTime(a) +
+      ' – ' +
+      fmtEnd(b) +
+      '</span><span>' +
+      dur((b - a) * 30) +
+      '</span>';
+    list.appendChild(li);
+  });
+  $('ranges').placeholder = iv.length
+    ? iv.map(([a, b]) => slotTime(a) + '-' + fmtEnd(b)).join(', ')
+    : '08:00-11:30, 18:00-21:00';
+  $('src').textContent = cur.src;
+  // freshness + offline
+  const chk = DATA && DATA.checked,
+    old = chk && Date.now() - new Date(chk).getTime() > 6 * 3600e3;
+  $('checked').textContent = chk ? 'Дані перевірено ' + ago(chk) : '';
+  const off = $('offline');
+  if (!online || (loadFailed && DATA)) {
+    off.hidden = false;
+    off.innerHTML =
+      '<b>Немає інтернету.</b> Показано останній збережений графік' +
+      (chk ? ' (перевірено ' + ago(chk) + ')' : '') +
+      '.';
+  } else if (old) {
+    off.hidden = false;
+    off.innerHTML =
+      '<b>Графік давно не оновлювався.</b> Перевірте його на <a href="https://www.ztoe.com.ua/unhooking-search.php" target="_blank" rel="noopener">сайті обленерго</a>.';
+  } else off.hidden = true;
+  status();
+}
+
+function status() {
+  const q = prof().queue,
+    now = new Date();
+  const clock = $('clock');
+  if (clock) clock.textContent = pad(now.getHours()) + ':' + pad(now.getMinutes());
+  const t0 = get(q, 0),
+    t1 = get(q, 1),
+    all = t0.slots.concat(t1.slots);
+  const nowMin = now.getHours() * 60 + now.getMinutes(),
+    si = Math.floor(nowMin / 30);
+  const off = all[si];
+  let j = si + 1;
+  while (j < 96 && all[j] === off) j++;
+  const bulb = $('bulb');
+  if (prof().none) {
+    bulb.className = 'bulb on';
+    bulb.textContent = 'Є';
+    $('state').textContent = 'Світло за графіком не вимикають';
+    $('next').textContent = 'За цією адресою можливі лише аварійні відключення';
+    $('count').textContent = '';
+    return;
+  }
+  bulb.className = 'bulb ' + (off ? 'off' : 'on');
+  bulb.textContent = off ? 'НЕМАЄ' : 'Є';
+  $('state').textContent = t0.ex ? 'Графіка немає' : off ? 'Світла немає' : 'Світло є';
+  if (t0.ex) {
+    $('next').textContent = 'Графік на сьогодні ще не опубліковано';
+    $('count').textContent = '';
+    return;
+  }
+  if (j >= 96 || (!off && j >= 48 && t1.ex)) {
+    $('next').textContent = off
+      ? 'Час увімкнення в графіку не вказано'
+      : t1.ex
+        ? 'Сьогодні більше відключень немає. Графіка на завтра поки немає'
+        : 'За графіком відключень немає';
+    $('count').textContent = '';
+    return;
+  }
+  const left = j * 30 * 60 - (nowMin * 60 + now.getSeconds());
+  $('next').textContent =
+    (off ? 'Увімкнуть ' : 'Вимкнуть ') + (j >= 48 ? 'завтра о ' : 'о ') + slotTime(j % 48);
+  const h = Math.floor(left / 3600),
+    m = Math.floor((left % 3600) / 60),
+    s = left % 60;
+  $('count').textContent =
+    (off ? 'до світла ' : 'до відключення ') + pad(h) + ':' + pad(m) + ':' + pad(s);
+}
+
+// ============================================================================
+// Share
+// ============================================================================
+
+$('share').onclick = async () => {
+  const url = location.origin + location.pathname + '#' + prof().queue;
+  const text = 'Графік відключень світла, черга ' + prof().queue + ' (Бердичів)';
+  const msg = $('shareMsg');
+  if (navigator.share) {
+    try {
+      await navigator.share({ title: 'Коли світло', text, url });
+      return;
+    } catch (e) {
+      if (e && e.name === 'AbortError') return;
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(url);
+    msg.textContent = 'Посилання скопійовано: ' + url;
+  } catch (_e) {
+    msg.textContent = 'Скопіюйте посилання: ' + url;
+  }
+  msg.hidden = false;
+  setTimeout(() => {
+    msg.hidden = true;
+  }, 8000);
+};
+
+// ============================================================================
+// Manual schedule
+// ============================================================================
+
+/** @param {string} txt @returns {boolean[]|null} */
+function parse(txt) {
+  const a = new Array(48).fill(false);
+  const re = /(\d{1,2})[:.](\d{2})\s*[-–—]\s*(\d{1,2})[:.](\d{2})/g;
+  let m,
+    n = 0;
+  while ((m = re.exec(txt))) {
+    const s = +m[1] * 2 + (+m[2] >= 30 ? 1 : 0);
+    let e = +m[3] * 2 + (+m[4] >= 30 ? 1 : 0);
+    if (e === 0) e = 48;
+    if (s >= 48 || e > 48 || e <= s) return null;
+    for (let i = s; i < e; i++) a[i] = true;
+    n++;
+  }
+  return n ? a : null;
+}
+
+$('apply').onclick = () => {
+  const a = parse($('ranges').value.trim());
+  if (!a) {
+    $('msg').textContent = 'Не вдалося прочитати час. Пишіть так: 08:00-11:30, 18:00-21:00';
+    return;
+  }
+  setCustom(prof().queue, day, a);
+  $('ranges').value = '';
+  $('msg').textContent =
+    'Збережено для черги ' + prof().queue + ', ' + (day ? 'завтра' : 'сьогодні') + '.';
+  render();
+};
+$('ranges').addEventListener('keydown', e => {
+  if (e.key === 'Enter') $('apply').click();
+});
+$('clear').onclick = () => {
+  setCustom(prof().queue, day, new Array(48).fill(false));
+  $('msg').textContent = 'День очищено: відключень немає.';
+  render();
+};
+$('reset').onclick = () => {
+  delete st.custom[dkey(dateFor(day)) + '|' + prof().queue];
+  save();
+  $('msg').textContent = 'Показано графік Житомиробленерго.';
+  render();
+};
+
+// ============================================================================
+// Calendar (ICS export)
+// ============================================================================
+
+/** @param {Date} d @returns {string} */
+function icsTime(d) {
+  return (
+    d.getFullYear() +
+    pad(d.getMonth() + 1) +
+    pad(d.getDate()) +
+    'T' +
+    pad(d.getHours()) +
+    pad(d.getMinutes()) +
+    '00'
+  );
+}
+
+/** @param {Queue} q @param {number} mins @returns {{text: string, count: number}} */
+function buildIcs(q, mins) {
+  const lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//svitlo-za-chergoyu//UK',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+  ];
+  const stamp = icsTime(new Date());
+  let n = 0;
+  [0, 1].forEach(off => {
+    const base = dateFor(off);
+    intervals(get(q, off).slots).forEach(([a, b]) => {
+      const s = new Date(base.getTime() + a * 30 * 60000),
+        e = new Date(base.getTime() + b * 30 * 60000);
+      if (e < new Date()) return;
+      n++;
+      lines.push(
+        'BEGIN:VEVENT',
+        'UID:svitlo-' + q + '-' + icsTime(s) + '@svitlo',
+        'DTSTAMP:' + stamp,
+        'DTSTART:' + icsTime(s),
+        'DTEND:' + icsTime(e),
+        'SUMMARY:Немає світла · черга ' + q,
+        'DESCRIPTION:Відключення за графіком: ' +
+          slotTime(a) +
+          '–' +
+          fmtEnd(b) +
+          '. Світло увімкнуть о ' +
+          fmtEnd(b) +
+          '.',
+        'BEGIN:VALARM',
+        'ACTION:DISPLAY',
+        'DESCRIPTION:За ' + mins + ' хв вимкнуть світло',
+        'TRIGGER:-PT' + mins + 'M',
+        'END:VALARM',
+        'END:VEVENT'
+      );
+    });
+  });
+  lines.push('END:VCALENDAR');
+  return { text: lines.join('\r\n'), count: n };
+}
+
+$('ics').onclick = () => {
+  const q = prof().queue,
+    mins = +$('remind').value,
+    { text, count } = buildIcs(q, mins);
+  if (!count) {
+    $('icsMsg').textContent = 'Попереду немає відключень за графіком: зберігати нічого.';
+    return;
+  }
+  const url = URL.createObjectURL(new Blob([text], { type: 'text/calendar;charset=utf-8' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'svitlo-cherga-' + q + '.ics';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+  const warn = get(q, 1).ex
+    ? ' Графіка на завтра поки немає: коли обленерго його опублікує, збережіть файл ще раз.'
+    : '';
+  $('icsMsg').textContent =
+    'Файл підготовлено: відключень ' +
+    count +
+    ', нагадування за ' +
+    mins +
+    ' хв. Відкрийте його й додайте в календар.' +
+    warn;
+};
+
+// ============================================================================
+// Address search (addresses.json is built by scripts/addresses.mjs)
+// ============================================================================
+
+/** @type {AddressData|null} */
+let ADDR = null;
+/** @type {Promise<void>|null} */
+let addrLoading = null;
+/** @type {AddressStreet|null} */
+let curStreet = null;
+let sugIdx = -1;
+
+const norm = s =>
+  (
+    ' ' +
+    s
+      .toLowerCase()
+      .replace(/[’'`ʼ]/g, '')
+      .replace(/[.,]/g, ' ') +
+    ' '
+  )
+    .replace(/\s(вул|вулиця|пров|провулок|просп|проспект|пл|площа|туп|тупик|узвіз)(?=\s)/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+const normHouse = s =>
+  s
+    .toLowerCase()
+    .replace(/\s|\.|-/g, '')
+    .replace(/a/g, 'а')
+    .replace(/b/g, 'б')
+    .replace(/v/g, 'в');
+const isHome = r => !/непобут|юридич/i.test(r.note || '');
+const place = () => ADDR.places.find(p => p.name === $('aPlace').value) || ADDR.places[0];
+
+/** @returns {Promise<void>} */
+function loadAddr() {
+  if (addrLoading) return addrLoading;
+  if (!ADDR) $('aRes').innerHTML = '<p class="hint">Завантажую адреси…</p>';
+  addrLoading = fetch('addresses.json')
+    .then(r => {
+      if (!r.ok) throw 0;
+      return r.json();
+    })
+    .then(j => {
+      ADDR = j;
+      $('aPlace').innerHTML = j.places.map(p => '<option>' + esc(p.name) + '</option>').join('');
+      if (j.updated) {
+        $('aUpd').textContent = ', оновлено ' + j.updated.split('-').reverse().join('.');
+      }
+      fillAddr();
+    })
+    .catch(() => {
+      addrLoading = null;
+      $('aRes').innerHTML =
+        '<p class="hint">Не вдалося завантажити адреси. Перевірте інтернет і спробуйте ще раз.</p>';
+    });
+  return addrLoading;
+}
+
+function fillAddr() {
+  const p = prof();
+  $('pName').value = p.name || '';
+  $('aHouse').value = p.house || '';
+  $('aStreet').value = p.street || '';
+  curStreet = null;
+  if (ADDR) {
+    const pl = ADDR.places.find(x => x.name === p.place) || ADDR.places[0];
+    $('aPlace').value = pl.name;
+    if (p.street) curStreet = pl.streets.find(s => s.name === p.street) || null;
+  }
+  showResult();
+}
+
+function saveAddr() {
+  const p = prof();
+  p.place = $('aPlace').value;
+  p.street = curStreet ? curStreet.name : '';
+  p.house = $('aHouse').value.trim();
+  save();
+  renderWhere();
+  status();
+}
+
+function suggest() {
+  const q = norm($('aStreet').value),
+    ul = $('aSug');
+  if (!ADDR || !q) {
+    ul.hidden = true;
+    $('aStreet').setAttribute('aria-expanded', 'false');
+    return;
+  }
+  const words = q.split(' ');
+  const list = place()
+    .streets.filter(s => {
+      const n = norm(s.name);
+      return words.every(w => n.includes(w));
+    })
+    .sort((a, b) => norm(a.name).indexOf(words[0]) - norm(b.name).indexOf(words[0]))
+    .slice(0, 12);
+  sugIdx = -1;
+  ul.innerHTML = list.length
+    ? list.map((s, i) => '<li role="option" data-i="' + i + '">' + esc(s.name) + '</li>').join('')
+    : '<li aria-disabled="true" class="hint">Нічого не знайдено</li>';
+  ul._list = list;
+  ul.hidden = false;
+  $('aStreet').setAttribute('aria-expanded', 'true');
+}
+
+function pickStreet(s) {
+  curStreet = s;
+  $('aStreet').value = s.name;
+  $('aSug').hidden = true;
+  $('aStreet').setAttribute('aria-expanded', 'false');
+  saveAddr();
+  showResult();
+  if (!$('aHouse').value) $('aHouse').focus();
+}
+
+function chooseQueue(q) {
+  prof().queue = q;
+  prof().none = false;
+  save();
+  render();
+}
+
+function showResult() {
+  const box = $('aRes');
+  if (!curStreet) {
+    box.innerHTML =
+      prof().street && !ADDR
+        ? ''
+        : '<p class="hint">Почніть вводити назву вулиці й оберіть її зі списку. Сайт сам визначить вашу чергу.</p>';
+    return;
+  }
+  const h = normHouse($('aHouse').value);
+  const all = curStreet.rows.map(r => ({
+    ...r,
+    hit: !!h && r.houses.split(',').some(x => normHouse(x) === h),
+  }));
+  const pickHome = list => (list.some(isHome) ? list.filter(isHome) : list);
+  const hits = all.filter(r => r.hit);
+  let rows,
+    head = '';
+  if (h && hits.length) rows = pickHome(hits);
+  else {
+    rows = pickHome(all);
+    if (h) {
+      head =
+        '<p class="hint">Будинку ' +
+        esc($('aHouse').value) +
+        ' немає в списку обленерго. Нижче всі будинки цієї вулиці.</p>';
+    }
+  }
+  // one clear answer -> choose it automatically
+  const qs = [...new Set(rows.map(r => r.q || 'none'))];
+  if ((h && hits.length && qs.length === 1) || (!h && qs.length === 1)) {
+    const only = rows[0];
+    if (only.q) {
+      if (prof().queue !== only.q || prof().none) chooseQueue(only.q);
+      box.innerHTML =
+        '<p class="found">Ваша черга: <span class="mono">' +
+        only.q +
+        '</span> ✓</p>' +
+        (h ? '' : '<p class="hint">На цій вулиці всі будинки в одній черзі.</p>');
+    } else {
+      if (!prof().none) {
+        prof().none = true;
+        save();
+        render();
+      }
+      box.innerHTML =
+        '<p class="found">За цією адресою світло за графіком не вимикають, крім аварійних відключень.</p>';
+    }
+    return;
+  }
+  box.innerHTML =
+    head +
+    (h
+      ? ''
+      : '<p class="hint">На цій вулиці різні черги. Введіть номер будинку або оберіть рядок.</p>') +
+    rows
+      .map(
+        r =>
+          '<div class="arow' +
+          (r.hit ? ' hit' : '') +
+          '"><div style="min-width:0"><div class="qv">' +
+          (r.q ? 'Черга ' + r.q : 'Не за графіком') +
+          '</div><div class="h">' +
+          (r.q ? '' : esc(r.info) + '. ') +
+          'Буд.: ' +
+          esc(r.houses) +
+          (isHome(r) ? '' : ' · ' + esc(r.note)) +
+          '</div></div>' +
+          (r.q
+            ? '<button type="button" class="btn small' +
+              (r.q === prof().queue ? '' : ' primary') +
+              '" data-q="' +
+              r.q +
+              '">' +
+              (r.q === prof().queue ? 'Обрано' : 'Обрати') +
+              '</button>'
+            : '') +
+          '</div>'
+      )
+      .join('');
+}
+
+$('aRes').addEventListener('click', e => {
+  const b = e.target.closest('button[data-q]');
+  if (!b) return;
+  chooseQueue(b.dataset.q);
+  showResult();
+});
+['focus', 'pointerdown'].forEach(ev => {
+  $('aStreet').addEventListener(ev, () => loadAddr());
+  $('aPlace').addEventListener(ev, () => loadAddr());
+});
+$('aStreet').addEventListener('input', () => {
+  curStreet = null;
+  loadAddr().then(suggest);
+  showResult();
+});
+$('aStreet').addEventListener('keydown', e => {
+  const ul = $('aSug'),
+    items = [...ul.querySelectorAll('li[data-i]')];
+  if (ul.hidden || !items.length) return;
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    sugIdx = (sugIdx + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+    items.forEach((li, i) => li.setAttribute('aria-selected', i === sugIdx));
+    items[sugIdx].scrollIntoView({ block: 'nearest' });
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    pickStreet(ul._list[Math.max(sugIdx, 0)]);
+  } else if (e.key === 'Escape') {
+    ul.hidden = true;
+  }
+});
+$('aSug').addEventListener('mousedown', e => {
+  const li = e.target.closest('li[data-i]');
+  if (li) {
+    e.preventDefault();
+    pickStreet($('aSug')._list[+li.dataset.i]);
+  }
+});
+$('aSug').addEventListener('click', e => {
+  const li = e.target.closest('li[data-i]');
+  if (li) pickStreet($('aSug')._list[+li.dataset.i]);
+});
+$('aStreet').addEventListener('blur', () =>
+  setTimeout(() => {
+    $('aSug').hidden = true;
+  }, 200)
+);
+$('aPlace').addEventListener('change', () => {
+  curStreet = null;
+  $('aStreet').value = '';
+  $('aHouse').value = '';
+  saveAddr();
+  showResult();
+  $('aStreet').focus();
+});
+$('aHouse').addEventListener('input', () => {
+  saveAddr();
+  showResult();
+});
+
+// ============================================================================
+// Theme
+// ============================================================================
+
+const themeBtns = [...document.querySelectorAll('.theme button')];
+
+function applyTheme(t) {
+  if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+  else document.documentElement.removeAttribute('data-theme');
+  themeBtns.forEach(b => b.setAttribute('aria-pressed', b.dataset.t === (t || 'auto')));
+  const dark =
+    t === 'dark' || (t !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
+  document.querySelector('meta[name="theme-color"]').content = dark ? '#10121a' : '#2d3350';
+}
+
+let theme = lsGet('svitlo-theme') || 'auto';
+themeBtns.forEach(
+  b =>
+    (b.onclick = () => {
+      theme = b.dataset.t;
+      lsSet('svitlo-theme', theme);
+      applyTheme(theme);
+    })
+);
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => applyTheme(theme));
+applyTheme(theme);
+
+// ============================================================================
+// Start
+// ============================================================================
+
+fillAddr();
+render();
+load();
+if (prof().street) loadAddr();
+window.addEventListener('online', () => {
+  online = true;
+  load();
+});
+window.addEventListener('offline', () => {
+  online = false;
+  render();
+});
+setInterval(load, 10 * 60 * 1000);
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) load();
+});
+let lastSlot = -1;
+setInterval(() => {
+  const n = new Date(),
+    s = n.getHours() * 2 + (n.getMinutes() >= 30 ? 1 : 0);
+  if (s !== lastSlot) {
+    lastSlot = s;
+    render();
+  } else status();
+}, 1000);
+
+// offline support
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});

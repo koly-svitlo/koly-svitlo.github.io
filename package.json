@@ -1,0 +1,41 @@
+{
+  "name": "koly-svitlo",
+  "version": "1.0.0",
+  "description": "Коли світло — графік відключень світла Житомиробленерго для Бердичева та району",
+  "type": "module",
+  "scripts": {
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "update": "node scripts/update.mjs",
+    "addresses": "node scripts/addresses.mjs"
+  },
+  "keywords": [
+    "ukraine",
+    "power-outage",
+    "berdycziv",
+    "zhytomyrenergo",
+    "pwa"
+  ],
+  "author": "srgborin-alt",
+  "license": "MIT",
+  "devDependencies": {
+    "@eslint/js": "^9.10.0",
+    "eslint": "^9.10.0",
+    "globals": "^15.9.0",
+    "prettier": "^3.3.3"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "prettier": {
+    "singleQuote": true,
+    "trailingComma": "es5",
+    "printWidth": 100,
+    "tabWidth": 2,
+    "semi": true,
+    "bracketSpacing": true,
+    "arrowParens": "avoid",
+    "endOfLine": "lf"
+  }
+}
