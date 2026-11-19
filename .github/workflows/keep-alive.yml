@@ -1,0 +1,26 @@
+name: Keep Alive (щоденно)
+
+on:
+  schedule:
+    - cron: "0 3 * * *"   # щодня о 03:00 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  keep-alive:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Create empty commit to keep repo active
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Create a tiny change in a keep-alive file
+          echo "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > .keep-alive
+          git add .keep-alive
+          git commit -m "Keep alive: $(date -u +%Y-%m-%d)"
+          git push
